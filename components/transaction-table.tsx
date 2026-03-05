@@ -3,113 +3,280 @@
 import { Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { useFinance } from "@/lib/finance-context"
-import { formatCurrency, formatDate, getCategoryLabel } from "@/lib/format"
+
+import { useFinance } from "@/context/finance-context"
+
+import {
+  formatCurrency,
+  formatDate,
+  getCategoryLabel,
+} from "@/lib/format"
+
 import { cn } from "@/lib/utils"
+
 import type { Transaction } from "@/types/financial"
 
-type TransactionTableProps = {
+import { useMemo, useState } from "react"
+
+type Props = {
   filterType?: "entrada" | "saida"
   limit?: number
 }
 
-export function TransactionTable({ filterType, limit }: TransactionTableProps) {
-  const { transactions, removeTransaction } = useFinance()
+export function TransactionTable({
+  filterType,
+  limit,
+}: Props) {
 
-  let filtered: Transaction[] = filterType
-    ? transactions.filter((t) => t.type === filterType)
-    : transactions
+  const { transactions, removeTransaction } =
+    useFinance()
 
-  if (limit) {
-    filtered = filtered.slice(0, limit)
+  const [removingId, setRemovingId] =
+    useState<string | null>(null)
+
+  const filtered = useMemo(() => {
+
+    let result: Transaction[] =
+      filterType
+        ? transactions.filter(
+            t => t.type === filterType
+          )
+        : transactions
+
+    // ordenar por data mais recente
+    result = result.sort(
+      (a, b) =>
+        new Date(b.date).getTime() -
+        new Date(a.date).getTime()
+    )
+
+    if (limit) {
+      result = result.slice(0, limit)
+    }
+
+    return result
+
+  }, [transactions, filterType, limit])
+
+  async function handleRemove(id: string) {
+
+    const confirmDelete =
+      confirm("Remover esta transação?")
+
+    if (!confirmDelete) return
+
+    try {
+
+      setRemovingId(id)
+
+      await removeTransaction(id)
+
+    } catch (error) {
+
+      console.error(error)
+
+    } finally {
+
+      setRemovingId(null)
+
+    }
+
+  }
+
+  if (!filtered.length) {
+
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+
+        <div className="text-sm text-muted-foreground">
+
+          Nenhuma transação encontrada
+
+        </div>
+
+      </div>
+    )
+
   }
 
   return (
     <div className="overflow-x-auto">
+
       <table className="w-full">
+
         <thead>
+
           <tr className="border-b border-border">
-            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Descricao
-            </th>
-            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
+
+            <Th>Descrição</Th>
+
+            <Th className="hidden sm:table-cell">
               Categoria
-            </th>
-            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">
+            </Th>
+
+            <Th className="hidden md:table-cell">
               Data
-            </th>
-            <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            </Th>
+
+            <Th align="right">
               Valor
-            </th>
-            <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider w-[60px]">
-              <span className="sr-only">Acoes</span>
-            </th>
+            </Th>
+
+            <Th align="right">
+              <span className="sr-only">
+                Ações
+              </span>
+            </Th>
+
           </tr>
+
         </thead>
+
         <tbody>
-          {filtered.map((transaction) => (
-            <tr
-              key={transaction.id}
-              className="border-b border-border/50 hover:bg-secondary/30 transition-colors"
-            >
-              <td className="py-3 px-4">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-card-foreground">
-                    {transaction.description}
+
+          {filtered.map(transaction => {
+
+            const isRemoving =
+              removingId === transaction.id
+
+            return (
+
+              <tr
+                key={transaction.id}
+                className="border-b border-border/50 hover:bg-secondary/30 transition-colors"
+              >
+
+                {/* DESCRIPTION */}
+                <td className="py-3 px-4">
+
+                  <div className="flex flex-col">
+
+                    <span className="text-sm font-medium">
+
+                      {transaction.description}
+
+                    </span>
+
+                    <span className="text-xs text-muted-foreground sm:hidden">
+
+                      {getCategoryLabel(
+                        transaction.category
+                      )}
+
+                    </span>
+
+                  </div>
+
+                </td>
+
+                {/* CATEGORY */}
+                <td className="py-3 px-4 hidden sm:table-cell">
+
+                  <Badge variant="outline">
+
+                    {getCategoryLabel(
+                      transaction.category
+                    )}
+
+                  </Badge>
+
+                </td>
+
+                {/* DATE */}
+                <td className="py-3 px-4 hidden md:table-cell">
+
+                  <span className="text-sm text-muted-foreground">
+
+                    {formatDate(transaction.date)}
+
                   </span>
-                  <span className="text-xs text-muted-foreground sm:hidden">
-                    {getCategoryLabel(transaction.category)}
+
+                </td>
+
+                {/* AMOUNT */}
+                <td className="py-3 px-4 text-right">
+
+                  <span
+                    className={cn(
+                      "text-sm font-semibold",
+
+                      transaction.type === "entrada"
+                        ? "text-emerald-500"
+                        : "text-rose-500"
+                    )}
+                  >
+
+                    {transaction.type === "entrada"
+                      ? "+"
+                      : "-"}
+
+                    {formatCurrency(
+                      transaction.amount
+                    )}
+
                   </span>
-                </div>
-              </td>
-              <td className="py-3 px-4 hidden sm:table-cell">
-                <Badge
-                  variant="outline"
-                  className="text-xs border-border text-muted-foreground"
-                >
-                  {getCategoryLabel(transaction.category)}
-                </Badge>
-              </td>
-              <td className="py-3 px-4 hidden md:table-cell">
-                <span className="text-sm text-muted-foreground">
-                  {formatDate(transaction.date)}
-                </span>
-              </td>
-              <td className="py-3 px-4 text-right">
-                <span
-                  className={cn(
-                    "text-sm font-semibold",
-                    transaction.type === "entrada"
-                      ? "text-emerald-400"
-                      : "text-rose-400"
-                  )}
-                >
-                  {transaction.type === "entrada" ? "+" : "-"}
-                  {formatCurrency(transaction.amount)}
-                </span>
-              </td>
-              <td className="py-3 px-4 text-right">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => removeTransaction(transaction.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="size-3.5" />
-                  <span className="sr-only">Remover transacao</span>
-                </Button>
-              </td>
-            </tr>
-          ))}
-          {filtered.length === 0 && (
-            <tr>
-              <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                Nenhuma transacao encontrada.
-              </td>
-            </tr>
-          )}
+
+                </td>
+
+                {/* ACTION */}
+                <td className="py-3 px-4 text-right">
+
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={isRemoving}
+                    onClick={() =>
+                      handleRemove(
+                        transaction.id
+                      )
+                    }
+                  >
+
+                    <Trash2 className="size-4" />
+
+                  </Button>
+
+                </td>
+
+              </tr>
+
+            )
+
+          })}
+
         </tbody>
+
       </table>
+
     </div>
   )
+
+}
+
+function Th({
+  children,
+  align,
+  className,
+}: {
+  children: React.ReactNode
+  align?: "left" | "right"
+  className?: string
+}) {
+
+  return (
+    <th
+      className={cn(
+        "py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider",
+
+        align === "right"
+          ? "text-right"
+          : "text-left",
+
+        className
+      )}
+    >
+      {children}
+    </th>
+  )
+
 }

@@ -16,8 +16,9 @@ import {
   Legend,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useFinance } from "@/lib/finance-context"
+import { useFinance } from "@/context/finance-context"
 import { formatCurrency } from "@/lib/format"
+import { useMemo } from "react"
 
 const CHART_COLORS = [
   "#34d399",
@@ -29,13 +30,30 @@ const CHART_COLORS = [
   "#fb923c",
 ]
 
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
-  if (!active || !payload) return null
+/* ===============================
+   TOOLTIP
+================================= */
+
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: any[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-lg">
-      <p className="text-xs font-medium text-popover-foreground mb-1">{label}</p>
-      {payload.map((entry, i) => (
-        <p key={i} className="text-xs" style={{ color: entry.color }}>
+      {label && (
+        <p className="text-xs font-medium text-popover-foreground mb-1">
+          {label}
+        </p>
+      )}
+      {payload.map((entry, index) => (
+        <p key={index} className="text-xs" style={{ color: entry.color }}>
           {entry.name}: {formatCurrency(entry.value)}
         </p>
       ))}
@@ -43,27 +61,62 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   )
 }
 
+/* ===============================
+   MONTHLY EVOLUTION
+================================= */
+
 export function MonthlyEvolutionChart() {
-  const { monthlyData } = useFinance()
+  const { transactions } = useFinance()
+
+  const monthlyData = useMemo(() => {
+    const grouped: Record<
+      string,
+      { receitas: number; gastos: number; reserva: number }
+    > = {}
+
+    transactions.forEach((t) => {
+      const month = new Date(t.date).toLocaleDateString("pt-BR", {
+        month: "short",
+      })
+
+      if (!grouped[month]) {
+        grouped[month] = { receitas: 0, gastos: 0, reserva: 0 }
+      }
+
+      if (t.type === "entrada") {
+        grouped[month].receitas += t.amount
+      } else {
+        grouped[month].gastos += t.amount
+      }
+
+      grouped[month].reserva =
+        grouped[month].receitas - grouped[month].gastos
+    })
+
+    return Object.entries(grouped).map(([month, values]) => ({
+      month,
+      ...values,
+    }))
+  }, [transactions])
 
   return (
     <Card className="border-border bg-card">
       <CardHeader>
         <CardTitle className="text-sm font-semibold text-card-foreground">
-          Evolucao Mensal
+          Evolução Mensal
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyData} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.025 260)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "oklch(0.6 0.02 260)", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "oklch(0.6 0.02 260)", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+            <BarChart data={monthlyData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" />
+              <YAxis />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-              <Bar dataKey="receitas" name="Receitas" fill="#34d399" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="gastos" name="Gastos" fill="#f87171" radius={[4, 4, 0, 0]} />
+              <Legend />
+              <Bar dataKey="receitas" fill="#34d399" />
+              <Bar dataKey="gastos" fill="#f87171" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -72,14 +125,33 @@ export function MonthlyEvolutionChart() {
   )
 }
 
+/* ===============================
+   CATEGORY PIE
+================================= */
+
 export function CategoryPieChart() {
-  const { categoryBreakdown } = useFinance()
+  const { transactions } = useFinance()
+
+  const categoryBreakdown = useMemo(() => {
+    const grouped: Record<string, number> = {}
+
+    transactions
+      .filter((t) => t.type === "saida")
+      .forEach((t) => {
+        grouped[t.category] = (grouped[t.category] || 0) + t.amount
+      })
+
+    return Object.entries(grouped).map(([name, value]) => ({
+      name,
+      value,
+    }))
+  }, [transactions])
 
   return (
     <Card className="border-border bg-card">
       <CardHeader>
         <CardTitle className="text-sm font-semibold text-card-foreground">
-          Distribuicao de Gastos
+          Distribuição de Gastos
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -88,35 +160,22 @@ export function CategoryPieChart() {
             <PieChart>
               <Pie
                 data={categoryBreakdown}
-                cx="50%"
-                cy="50%"
+                dataKey="value"
+                nameKey="name"
                 innerRadius={60}
                 outerRadius={100}
                 paddingAngle={3}
-                dataKey="value"
-                nameKey="name"
-                stroke="none"
               >
-                {categoryBreakdown.map((_, index) => (
-                  <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                {categoryBreakdown.map((entry, index) => (
+                  <Cell
+                    key={entry.name}
+                    fill={CHART_COLORS[index % CHART_COLORS.length]}
+                  />
                 ))}
               </Pie>
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.[0]) return null
-                  return (
-                    <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-lg">
-                      <p className="text-xs font-medium text-popover-foreground">
-                        {payload[0].name}: {formatCurrency(payload[0].value as number)}
-                      </p>
-                    </div>
-                  )
-                }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
-                formatter={(value: string) => <span className="text-muted-foreground">{value}</span>}
-              />
+
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -125,8 +184,35 @@ export function CategoryPieChart() {
   )
 }
 
+/* ===============================
+   RESERVE LINE
+================================= */
+
 export function ReserveLineChart() {
-  const { monthlyData } = useFinance()
+  const { transactions } = useFinance()
+
+  const monthlyData = useMemo(() => {
+    const grouped: Record<string, number> = {}
+
+    transactions.forEach((t) => {
+      const month = new Date(t.date).toLocaleDateString("pt-BR", {
+        month: "short",
+      })
+
+      if (!grouped[month]) grouped[month] = 0
+
+      if (t.type === "entrada") {
+        grouped[month] += t.amount
+      } else {
+        grouped[month] -= t.amount
+      }
+    })
+
+    return Object.entries(grouped).map(([month, reserva]) => ({
+      month,
+      reserva,
+    }))
+  }, [transactions])
 
   return (
     <Card className="border-border bg-card">
@@ -139,18 +225,15 @@ export function ReserveLineChart() {
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.025 260)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "oklch(0.6 0.02 260)", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "oklch(0.6 0.02 260)", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" />
+              <YAxis />
               <Tooltip content={<CustomTooltip />} />
               <Line
                 type="monotone"
                 dataKey="reserva"
-                name="Reserva"
                 stroke="#818cf8"
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: "#818cf8", stroke: "oklch(0.17 0.02 260)", strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: "#818cf8" }}
+                strokeWidth={2}
               />
             </LineChart>
           </ResponsiveContainer>
